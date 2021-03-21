@@ -1,0 +1,75 @@
+use lazy_static::lazy_static;
+use std::collections::HashMap;
+
+type BinaryOperator = fn(i32, i32) -> i32;
+
+lazy_static! {
+    static ref OPERATORS: HashMap<&'static str, BinaryOperator> = {
+        use std::ops::Add;
+        use std::ops::Div;
+        use std::ops::Mul;
+        use std::ops::Sub;
+        let mut m = HashMap::new();
+        m.insert("plus ", i32::add as BinaryOperator);
+        m.insert("multiplied by ", i32::mul as BinaryOperator);
+        m.insert("minus ", i32::sub as BinaryOperator);
+        m.insert("divided by ", i32::div as BinaryOperator);
+        m.insert(
+            "raised to the ",
+            (|a: i32, b: i32| a.pow(b as u32)) as BinaryOperator,
+        );
+        m
+    };
+}
+
+fn next_operand(sub_command: &str) -> Option<(i32, &str)> {
+    sub_command
+        .find(|c: char| c.is_ascii_digit() || c == '-')
+        .and_then(|start| {
+            sub_command[start + 1..]
+                .find(|c: char| !c.is_ascii_digit())
+                .and_then(|end| {
+                    sub_command[start..start + 1 + end]
+                        .parse()
+                        .ok()
+                        .map(|op| (op, &sub_command[start + 1 + end + 1..]))
+                })
+        })
+}
+
+fn next_operator(sub_command: &str) -> Option<(&BinaryOperator, &str)> {
+    sub_command
+        .find(|c: char| c.is_ascii_digit() || c == '-')
+        .and_then(|end| {
+            OPERATORS
+                .get(&sub_command[..end])
+                .map(|op| (op, &sub_command[end..]))
+        })
+}
+
+pub fn answer(command: &str) -> Option<i32> {
+    if !command.starts_with("What is ") || !command.ends_with('?') {
+        return None;
+    }
+    let command = command["What is ".len()..]
+        .replace("st ", " ")
+        .replace("nd ", " ")
+        .replace("rd ", " ")
+        .replace("th ", " ")
+        .replace(" power", "");
+    let mut command = command.as_str();
+
+    let mut result = 0;
+    if let Some((operand, remaining)) = next_operand(command) {
+        result += operand;
+        command = remaining;
+        while let Some((operator, remaining)) = next_operator(command) {
+            command = remaining;
+            if let Some((operand, remaining)) = next_operand(command) {
+                result = operator(result, operand);
+                command = remaining;
+            }
+        }
+    }
+    Some(result).filter(|_| command.is_empty())
+}

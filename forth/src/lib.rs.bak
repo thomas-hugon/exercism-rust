@@ -1,0 +1,372 @@
+mod parser;
+mod lang;
+
+// use lazy_static::lazy_static;
+use std::collections::HashMap;
+
+use nom::IResult;
+use nom::branch::alt;
+use nom::bytes::complete::is_not;
+use nom::character::complete::{char, digit1, multispace0};
+
+use nom::combinator::{map, recognize};
+use nom::error::{ParseError, ErrorKind};
+use nom::lib::std::str::FromStr;
+use nom::multi::{many0, many1};
+use nom::sequence::{delimited, pair, preceded, terminated};
+use crate::Error::{InvalidWord, InvalidProgram};
+use crate::lang::Operator;
+
+
+pub type Value = i32;
+pub type ForthResult = Result<(), Error>;
+
+impl crate::lang::Stack<Value> for Forth{
+    fn pop(&mut self) -> Option<i32> {
+        self.stack.pop()
+    }
+
+    fn push(&mut self, val: i32) {
+        self.stack.push(val)
+    }
+}
+
+#[derive(Default)]
+pub struct Forth {
+    stack: Vec<Value>,
+    // words: HashMap<String, Vec<LanguagePrimitive>>,
+    words: HashMap<String, Vec<lang::Operator<Value>>>,
+}
+
+// #[derive(Debug,Copy, Clone)]
+// enum LanguagePrimitive{
+//     Value(Value),
+//     Operation(Operator)
+// }
+//
+// #[derive(Debug,Copy, Clone)]
+// enum Operator {
+//     Unary(UnaryOperator),
+//     Binary(BinaryOperator)
+// }
+// #[derive(Debug,Copy, Clone)]
+// enum UnaryOperator {
+//     Dup, Drop
+// }
+// #[derive(Debug,Copy, Clone)]
+// enum BinaryOperator {
+//     Add, Sub, Mul, Div, Swap, Over
+// }
+//
+// impl FromStr for LanguagePrimitive{
+//     type Err = ();
+//
+//     fn from_str(s: &str) -> Result<Self, Self::Err> {
+//         match s {
+//             "DROP" => Ok(LanguagePrimitive::Operation(Operator::Unary(UnaryOperator::Drop))),
+//             "DUP" => Ok(LanguagePrimitive::Operation(Operator::Unary(UnaryOperator::Dup))),
+//             "+" => Ok(LanguagePrimitive::Operation(Operator::Binary(BinaryOperator::Add))),
+//             "-" => Ok(LanguagePrimitive::Operation(Operator::Binary(BinaryOperator::Sub))),
+//             "*" => Ok(LanguagePrimitive::Operation(Operator::Binary(BinaryOperator::Mul))),
+//             "/" => Ok(LanguagePrimitive::Operation(Operator::Binary(BinaryOperator::Div))),
+//             "SWAP" => Ok(LanguagePrimitive::Operation(Operator::Binary(BinaryOperator::Swap))),
+//             "OVER" => Ok(LanguagePrimitive::Operation(Operator::Binary(BinaryOperator::Over))),
+//             _ => Err(())
+//         }
+//     }
+// }
+
+
+
+impl<T> FromStr for lang::Operator<T>{
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "DROP" => Ok(lang::Operator::Drop),
+            "DUP" => Ok(lang::Operator::Dup),
+            "+" => Ok(lang::Operator::Add),
+            "-" => Ok(lang::Operator::Sub),
+            "*" => Ok(lang::Operator::Mul),
+            "/" => Ok(lang::Operator::Div),
+            "SWAP" => Ok(lang::Operator::Swap),
+            "OVER" => Ok(lang::Operator::Over),
+            _ => Err(())
+        }
+    }
+}
+
+
+// fn ws<'a, F: 'a, O, E: ParseError<&'a str>>(inner: F) -> impl FnMut(&'a str) -> IResult<&'a str, O, E>
+//     where
+//         F: FnMut(&'a str) -> IResult<&'a str, O, E>,
+// {
+//     delimited( multispace0, inner, multispace0 )
+// }
+//
+// #[derive(Debug)]
+// enum Token<'a>{
+//     Value(&'a str),
+//     Word(&'a str),
+//     WordDef((&'a str, Vec<Token<'a>>)),
+//
+// }
+//
+// fn value_str(input: &str) -> IResult<&str, &str> {
+//     ws(digit1 )(input)
+// }
+//
+// fn t_value(input: &str) -> IResult<&str, Token, Error> {
+//     map(value_str, Token::Value)(input).map_err(|_|nom::Err::Error(Error::InvalidWord))
+// }
+//
+// fn word_str(input: &str) -> IResult<&str, &str, Error> {
+//     ws(recognize(
+//         pair(
+//             is_not("0123456789 ;:\t\r\n"),
+//             many0(is_not(" ;:\t\r\n"))
+//         )
+//     ) )(input)
+// }
+//
+// fn t_word(input: &str) -> IResult<&str, Token, Error> {
+//     map(word_str, Token::Word)(input).map_err(|_|nom::Err::Error(Error::InvalidWord))
+// }
+//
+// fn worddef_inner(input: &str) -> IResult<&str, (&str, Vec<Token>), Error> {
+//     terminated(
+//         pair(word_str, many1(alt((t_word, t_value))))
+//         ,char(';')
+//     )(input).map_err(|_|nom::Err::Failure(Error::InvalidWord))
+// }
+// fn worddef(input: &str) -> IResult<&str, (&str, Vec<Token>), Error> {
+//     ws(preceded(char(':'),worddef_inner) )(input)
+// }
+//
+// fn t_worddef(input: &str) -> IResult<&str, Token, Error> {
+//     map(worddef, Token::WordDef)(input)
+// }
+//
+//
+// fn tokenize(input: &str) -> IResult<&str, Vec<Token>, Error> {
+//     many0(alt((t_worddef, t_word, t_value)))(input)
+// }
+
+
+#[derive(Debug, PartialEq)]
+pub enum Error {
+    DivisionByZero,
+    StackUnderflow,
+    UnknownWord,
+    InvalidWord,
+    InvalidProgram,
+}
+
+impl ParseError<&str> for Error{
+    fn from_error_kind(_input: &str, _kind: ErrorKind) -> Self {
+        Self::InvalidWord
+    }
+
+    fn append(_input: &str, _kind: ErrorKind, _other: Self) -> Self {
+        Self::InvalidWord
+    }
+}
+
+impl Forth {
+    pub fn new() -> Forth {
+        Forth::default()
+    }
+
+    pub fn stack(&self) -> &[Value] {
+        &self.stack
+    }
+
+    pub fn eval(&mut self, input: &str) -> ForthResult {
+
+        let x = match crate::parser::tokenize(input){
+            Ok(a) => Ok(a),
+            Err(nom::Err::Failure(parser::Error::InvalidWord)) => Err(InvalidWord),
+            _ => Err(InvalidProgram),
+        }?;
+
+        // let x = match tokenize(input){
+        //     Ok(x) => x,
+        //     Err(nom::Err::Failure(e)) => {return Err(e);}
+        //     _ => {return Err(Error::InvalidProgram);}
+        // };
+        if !x.0.is_empty() || x.1.is_empty(){
+            return Err(Error::InvalidProgram);
+        }
+        for token in x.1{
+            match token {
+                parser::Token::Value(v) => {
+                    lang::Operator::Push(v.parse().unwrap()).apply(self);
+                }
+                parser::Token::Word(w) => {
+                    let w = w.to_ascii_uppercase();
+                    if let Some(primitives) = self.words.get(&w){
+                        for primitive in primitives.to_owned(){
+                            // self.eval_primitive(primitive)?
+                            primitive.apply(self).map_err(|e| match e{
+                                lang::Error::DivisionByZero => Error::DivisionByZero,
+                                lang::Error::StackUnderflow => Error::StackUnderflow
+                            })?
+                        }
+                    }
+                    else{
+                        // self.eval_primitive(w.parse().map_err(|_|Error::UnknownWord)?)?;
+                        w.parse::<lang::Operator<Value>>().map_err(|_|Error::UnknownWord)?.apply(self).map_err(|e| match e{
+                            lang::Error::DivisionByZero => Error::DivisionByZero,
+                            lang::Error::StackUnderflow => Error::StackUnderflow
+                        })?
+                    }
+                }
+                parser::Token::WordDef((n,d)) => {
+                    let primitives = self.eval_word_def(&d)?;
+                    self.words.insert(n.to_ascii_uppercase(), primitives);
+                }
+            }
+        }
+        Ok(())
+    }
+
+
+    fn eval_word_def(&self, def: &[parser::Token]) -> Result<Vec<Operator<Value>>, Error>{
+        let mut primitives: Vec<Operator<Value>> = Vec::with_capacity(def.len());
+        for def in def {
+            match def{
+                parser::Token::Value(v) => {
+                    primitives.push(Operator::Push(v.parse().unwrap()));
+                }
+                parser::Token::Word(w) => {
+                    let w = w.to_ascii_uppercase();
+                    if let Some(vec) = self.words.get(&w){
+                        primitives.extend(vec);
+                    }
+                    else{
+                        primitives.push(w.parse().map_err(|_|Error::InvalidWord)?);
+                    }
+                }
+                parser::Token::WordDef(_) => {return Err(Error::InvalidWord);}
+            }
+        }
+        Ok(primitives)
+    }
+
+    // pub fn eval(&mut self, input: &str) -> ForthResult {
+    //
+    //     let x = match crate::parser::tokenize(input){
+    //         Ok(a) => Ok(a),
+    //         Err(nom::Err::Failure(parser::Error::InvalidWord)) => Err(InvalidWord),
+    //         _ => Err(InvalidProgram),
+    //     }?;
+    //
+    //     // let x = match tokenize(input){
+    //     //     Ok(x) => x,
+    //     //     Err(nom::Err::Failure(e)) => {return Err(e);}
+    //     //     _ => {return Err(Error::InvalidProgram);}
+    //     // };
+    //     if !x.0.is_empty() || x.1.is_empty(){
+    //         return Err(Error::InvalidProgram);
+    //     }
+    //     for token in x.1{
+    //         match token {
+    //             parser::Token::Value(v) => {
+    //                 self.stack.push(v.parse().unwrap());
+    //             }
+    //             parser::Token::Word(w) => {
+    //                 let w = w.to_ascii_uppercase();
+    //                 if let Some(primitives) = self.words.get(&w){
+    //                     for primitive in primitives.to_owned(){
+    //                         self.eval_primitive(primitive)?
+    //                     }
+    //                 }
+    //                 else{
+    //                     self.eval_primitive(w.parse().map_err(|_|Error::UnknownWord)?)?;
+    //                 }
+    //             }
+    //             parser::Token::WordDef((n,d)) => {
+    //                 let primitives = self.eval_word_def(&d)?;
+    //                 self.words.insert(n.to_ascii_uppercase(), primitives);
+    //             }
+    //         }
+    //     }
+    //     Ok(())
+    // }
+
+    // fn eval_primitive(&mut self, primitive: LanguagePrimitive) -> Result<(), Error>{
+    //     match primitive {
+    //         LanguagePrimitive::Value(v) => {
+    //             self.stack.push(v);
+    //         }
+    //         LanguagePrimitive::Operation(op) => {
+    //             let last = self.stack.pop().ok_or(Error::StackUnderflow)?;
+    //             match op {
+    //                 Operator::Unary(op) => {
+    //                     match op {
+    //                         UnaryOperator::Dup => {
+    //                             self.stack.push(last);
+    //                             self.stack.push(last);
+    //                         }
+    //                         UnaryOperator::Drop => {}
+    //                     }
+    //                 }
+    //                 Operator::Binary(op) => {
+    //                     let before_last = self.stack.pop().ok_or(Error::StackUnderflow)?;
+    //                     match op {
+    //                         BinaryOperator::Add => {
+    //                             self.stack.push(before_last + last)
+    //                         }
+    //                         BinaryOperator::Sub => {
+    //                             self.stack.push(before_last - last)
+    //                         }
+    //                         BinaryOperator::Mul => {
+    //                             self.stack.push(before_last * last)
+    //                         }
+    //                         BinaryOperator::Div => {
+    //                             if last == 0 {
+    //                                 return Err(Error::DivisionByZero);
+    //                             }
+    //                             self.stack.push(before_last / last)
+    //                         }
+    //                         BinaryOperator::Swap => {
+    //                             self.stack.push(last);
+    //                             self.stack.push(before_last);
+    //                         }
+    //                         BinaryOperator::Over => {
+    //                             self.stack.push(before_last);
+    //                             self.stack.push(last);
+    //                             self.stack.push(before_last);
+    //                         }
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     Ok(())
+    // }
+    //
+    // fn eval_word_def(&self, def: &[parser::Token]) -> Result<Vec<LanguagePrimitive>, Error>{
+    //     let mut primitives: Vec<LanguagePrimitive> = Vec::with_capacity(def.len());
+    //     for def in def {
+    //         match def{
+    //             parser::Token::Value(v) => {
+    //                 primitives.push(LanguagePrimitive::Value(v.parse().unwrap()));
+    //             }
+    //             parser::Token::Word(w) => {
+    //                 let w = w.to_ascii_uppercase();
+    //                 if let Some(vec) = self.words.get(&w){
+    //                     primitives.extend(vec);
+    //                 }
+    //                 else{
+    //                     primitives.push(w.parse().map_err(|_|Error::InvalidWord)?);
+    //                 }
+    //             }
+    //             parser::Token::WordDef(_) => {return Err(Error::InvalidWord);}
+    //         }
+    //     }
+    //     Ok(primitives)
+    // }
+
+}
+

@@ -1,0 +1,12 @@
+[package]
+edition = "2018"
+name = "wordy"
+version = "1.5.0"
+
+[features]
+exponentials = []
+
+
+[dependencies]
+lazy_static = "1.4.0"
+regex = "1.4.3"
